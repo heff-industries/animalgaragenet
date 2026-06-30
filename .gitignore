@@ -1,0 +1,99 @@
+node_modules
+
+# Output
+.output
+.vercel
+.netlify
+.wrangler
+/.svelte-kit
+/build
+dist
+
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Cursor agent local state (orchestrator progress — never commit)
+.cursor/commit-progress.json
+
+# Env — never commit real secrets (only templates / CI fixtures)
+.env
+.env.*
+!.env.example
+!.env.test
+
+# Supabase CLI local state (migrations in supabase/migrations/ are committed)
+supabase/.branches
+supabase/.temp
+supabase/.env
+supabase/.env.*
+supabase/functions/.env
+supabase/functions/**/.env
+supabase/seed.local.sql
+.supabase/
+
+# Database dumps & local DB files — schema migrations only, never data dumps
+*.dump
+*.sql.gz
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+pgdata/
+postgres-data/
+docker-data/
+
+# Credentials & key material
+*.pem
+*.p12
+*.pfx
+*.key
+.credentials
+credentials.json
+service-account*.json
+secrets.json
+.secrets/
+secrets/
+
+# Playwright stored auth sessions
+playwright/.auth/
+
+# Vite
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+
+# Logs & coverage
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+coverage
+.nyc_output
+
+# Test artifacts
+test-results
+playwright-report
+playwright/.cache
+blob-report
+
+# IDE (keep committed .cursor config)
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# Temp & cache
+.cache
+.temp
+tmp
+*.tsbuildinfo
+.wiki-cache/
+
+# Vendored agent skills (repo uses agents/ + .cursor/skills symlinks)
+.agents/

@@ -1,0 +1,70 @@
+import { isPartProduct } from '$lib/data/catalog-helpers';
+import { searchBuilds } from '$lib/data/mock/builds';
+import { searchGuides } from '$lib/data/mock/guides';
+import { searchParts } from '$lib/data/mock/parts';
+import { searchProducts } from '$lib/data/mock/products';
+import { config } from '$lib/config/env';
+import type { BuildThread, Guide } from '$lib/types/domain';
+import type { Product } from '$lib/types/saleor';
+import { resolveChannelForLocale } from '$lib/server/saleor/channels';
+import { saleorFetch } from '$lib/server/saleor/client';
+import { mapProductListNode, type SaleorProductListNode } from '$lib/server/saleor/mappers';
+import { withSaleorCatalog } from '$lib/server/catalog/fallback';
+import { PRODUCT_SEARCH_QUERY } from '$lib/server/saleor/queries';
+
+export interface CatalogSearchResults {
+	products: Product[];
+	parts: Product[];
+	builds: BuildThread[];
+	guides: Guide[];
+}
+
+const EMPTY_RESULTS: CatalogSearchResults = {
+	products: [],
+	parts: [],
+	builds: [],
+	guides: []
+};
+
+async function searchSaleorProducts(query: string, locale: string): Promise<Product[]> {
+	const channel = await resolveChannelForLocale(locale);
+	const result = await saleorFetch<{
+		products: { edges: { node: SaleorProductListNode }[] };
+	}>(PRODUCT_SEARCH_QUERY, { channel, query, first: 24 });
+
+	if (result.errors?.length || !result.data) {
+		throw new Error(result.errors?.[0]?.message ?? 'Saleor product search failed');
+	}
+
+	return result.data.products.edges.map(({ node }) => mapProductListNode(node));
+}
+
+/**
+ * Merged catalog search — mock default; Saleor merch when env is set (server-side Saleor search filter).
+ */
+// @saleor-migration: intentional — catalog swap point; see docs/commerce/saleor.md#quick-migration
+export async function searchCatalog(
+	query: string,
+	locale: string = config.defaultLocale
+): Promise<CatalogSearchResults> {
+	const q = query.trim();
+	if (!q) return EMPTY_RESULTS;
+
+	const { products, parts } = await withSaleorCatalog(
+		async () => {
+			const saleorHits = await searchSaleorProducts(q, locale);
+			return {
+				products: saleorHits.filter((p) => !isPartProduct(p)),
+				parts: saleorHits.filter(isPartProduct)
+			};
+		},
+		() => ({ products: searchProducts(q), parts: searchParts(q) })
+	);
+
+	return {
+		products,
+		parts,
+		builds: searchBuilds(q),
+		guides: searchGuides(q)
+	};
+}

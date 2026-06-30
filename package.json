@@ -1,0 +1,63 @@
+{
+	"name": "animalgaragenet",
+	"private": true,
+	"version": "0.0.1",
+	"type": "module",
+	"engines": {
+		"node": ">=24.0.0"
+	},
+	"scripts": {
+		"dev": "vite dev",
+		"build": "vite build",
+		"preview": "vite preview",
+		"prepare": "svelte-kit sync || echo ''",
+		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+		"lint": "prettier --check . && eslint .",
+		"format": "prettier --write .",
+		"check:secrets": "bash scripts/check-secrets.sh",
+		"check:secrets:bundle": "CHECK_CLIENT_BUNDLE=1 bash scripts/check-secrets.sh",
+		"secrets:audit": "bash scripts/check-github-secrets.sh",
+		"secrets:push": "bash scripts/push-github-secrets.sh",
+		"test": "npm run test:unit && npm run test:e2e",
+		"test:unit": "svelte-kit sync && vitest run",
+		"test:readiness": "sh -c 'if [ -f .env ]; then tsx --env-file=.env scripts/test-readiness.ts; else tsx scripts/test-readiness.ts; fi'",
+		"test:contracts": "vitest run tests/contracts",
+		"test:e2e": "playwright test",
+		"test:ci": "npm run test:unit && CI=true npm run test:e2e"
+	},
+	"devDependencies": {
+		"@eslint/js": "^10.0.1",
+		"@playwright/test": "^1.61.1",
+		"@sveltejs/adapter-auto": "^7.0.1",
+		"@sveltejs/kit": "^2.68.0",
+		"@sveltejs/vite-plugin-svelte": "^7.1.2",
+		"@tailwindcss/vite": "^4.3.2",
+		"@types/node": "^24",
+		"@types/sanitize-html": "^2.16.1",
+		"eslint": "^10.6.0",
+		"eslint-config-prettier": "^10.1.8",
+		"eslint-plugin-svelte": "^3.20.0",
+		"globals": "^17.7.0",
+		"prettier": "^3.9.4",
+		"prettier-plugin-svelte": "^4.1.1",
+		"prettier-plugin-tailwindcss": "^0.8.0",
+		"svelte": "^5.56.4",
+		"svelte-check": "^4.7.1",
+		"tailwindcss": "^4.3.2",
+		"tsx": "^4.22.4",
+		"typescript": "^6.0.3",
+		"typescript-eslint": "^8.62.1",
+		"vite": "^8.1.1",
+		"vitest": "^4.1.9"
+	},
+	"dependencies": {
+		"@aws-sdk/client-cloudfront": "^3.1076.0",
+		"@aws-sdk/client-s3": "^3.1076.0",
+		"@aws-sdk/s3-request-presigner": "^3.1076.0",
+		"@stripe/stripe-js": "^9.8.0",
+		"@supabase/ssr": "^0.12.0",
+		"@supabase/supabase-js": "^2.110.0",
+		"sanitize-html": "^2.17.5"
+	}
+}

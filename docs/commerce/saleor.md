@@ -1,0 +1,197 @@
+# Saleor Integration Plan
+
+Headless commerce architecture for Animal Garage.
+
+## Architecture
+
+```
+<your-site-host> (SvelteKit)          <your-saleor-host> (Saleor)
+┌─────────────────────────┐           ┌─────────────────────────┐
+│  Shop pages             │  GraphQL  │  Products               │
+│  Product detail         │ ────────▶ │  Cart / Checkout        │
+│  Cart (future)          │           │  Shipping zones         │
+│  Checkout (future)      │           │  Payments (Stripe)      │
+└─────────────────────────┘           └─────────────────────────┘
+```
+
+Saleor runs on a **separate domain**. This repo is the storefront frontend only.
+
+## Current state (June 2026)
+
+**Catalog:** Primary shop, parts, gift cards, deals, collections, and homepage product slices use env-gated Saleor loaders with mock fallback when `PUBLIC_SALEOR_API_URL` is unset. See [saleor-audit.md](../audits/saleor-audit.md) for the full wired vs mock inventory.
+
+**Cart:** Create checkout, add line, and read lines work when Saleor is enabled (`ag-checkout-id` cookie). Remove/qty mutations and checkout completion are not wired.
+
+**Checkout:** `/checkout` is a UI placeholder — no payment, shipping, or `CHECKOUT_COMPLETE`. Payment architecture, env vars, and flow: [saleor-payments.md](./saleor-payments.md).
+
+| Area                | Location                                                        |
+| ------------------- | --------------------------------------------------------------- |
+| GraphQL client      | `src/lib/server/saleor/client.ts`                               |
+| Queries + mappers   | `src/lib/server/saleor/queries.ts`, `mappers.ts`                |
+| Catalog swap points | `src/lib/server/catalog/*.ts`                                   |
+| Checkout scaffold   | `src/lib/server/saleor/checkout.ts`, `cart/checkout/+server.ts` |
+| Mock fallback       | `src/lib/data/mock/products.ts`                                 |
+
+## Environment
+
+```env
+PUBLIC_SALEOR_API_URL=https://<your-saleor-host>/graphql/
+SALEOR_CHANNEL=default-channel
+```
+
+Channels in Saleor map to market/locale (e.g. `us`, `eu`, `jp`). Wire channel selection to the locale store.
+
+## Integration steps
+
+### 1. Product catalog
+
+Replace mock loaders with:
+
+```typescript
+import { saleorFetch } from '$lib/server/saleor/client';
+import { PRODUCTS_QUERY } from '$lib/server/saleor/queries';
+import { config } from '$lib/config/env';
+
+const result = await saleorFetch(PRODUCTS_QUERY, {
+	channel: config.saleorChannel,
+	first: 24
+});
+```
+
+Map Saleor response fields (`pricing.priceRange.start.gross`) to internal `Product` type.
+
+### 2. Product detail
+
+Use `PRODUCT_BY_SLUG_QUERY` in `shop/[slug]/+page.server.ts`.
+
+### 3. Collections
+
+Use `COLLECTIONS_QUERY` for homepage and `/shop?collection=` filtering.
+
+### Shop category filters
+
+`/shop` category pills are hydrated from Saleor when `PUBLIC_SALEOR_API_URL` is set:
+
+| Piece         | Location                                                            |
+| ------------- | ------------------------------------------------------------------- |
+| Filter loader | `src/lib/server/catalog/shop-filters.ts` — `getShopFilterOptions()` |
+| Shop page     | `src/routes/shop/+page.server.ts` — server load                     |
+| JSON API      | `GET /api/catalog/shop-filters` — `{ categories, source }`          |
+
+Saleor path uses `CATEGORIES_QUERY` (top-level category tree). Mock fallback derives from `SHOP_CATEGORIES` in `catalog-helpers.ts`. Product filtering uses legacy heuristics for mock slugs (`tees`, `gift-cards`) or matches Saleor `category.slug` / `tags` metadata when live.
+
+### 4. Cart & checkout
+
+**Done (partial):** create checkout, add line, read lines — `src/lib/server/saleor/checkout.ts`, `cart/checkout/+server.ts`, `ag-checkout-id` cookie.
+
+**Remaining:**
+
+- Line remove / quantity (`checkoutLinesUpdate`, `checkoutLinesDelete`)
+- Shipping address and `availableShippingMethods`
+- Payment + `CHECKOUT_COMPLETE`
+- `/checkout` page (currently placeholder)
+
+### 5. Vouchers, promo codes & gift cards
+
+**Done (partial):** Account redeem (`/account/redeem`), cart promo API (`/cart/checkout/promo`), `checkoutAddPromoCode` / `checkoutRemovePromoCode` in `checkout.ts`. Mock codes when Saleor unset (`GARAGE10`, `PITLANE15`).
+
+| Surface                | Route / component               | Status    |
+| ---------------------- | ------------------------------- | --------- |
+| Account redeem         | `/account/redeem`               | Done      |
+| Cart / checkout inline | `PromoCodeForm`, cart promo API | Done      |
+| Gift card balance      | Checkout summary                | Not wired |
+
+### 6. International shipping
+
+Saleor shipping zones define available countries and rates.
+
+Frontend readiness (already scaffolded):
+
+| Feature                 | Location                                   |
+| ----------------------- | ------------------------------------------ |
+| Locale codes            | `src/lib/types/locale.ts`                  |
+| Currency formatting     | `src/lib/i18n/currency.ts`                 |
+| Locale store            | `src/lib/stores/locale.svelte.ts`          |
+| Region selector         | `src/lib/components/LocaleSelector.svelte` |
+| Shipping region display | Product & shop pages                       |
+
+**Next steps:**
+
+1. ~~Map locale → Saleor channel~~ — done in `src/lib/server/saleor/channels.ts`
+2. Pass shipping address country to checkout
+3. Display shipping rates from `checkout.availableShippingMethods`
+4. **Currency:** When `PUBLIC_SALEOR_API_URL` is set, catalog and checkout prices come from the Saleor channel (`getChannelForLocale()`). The locale selector sets `?locale=` and reloads catalog data; `formatPrice` formats channel-native amounts without client-side conversion. Mock catalog uses fixed display rates in `src/lib/i18n/currency.ts` (`MOCK_EXCHANGE_RATES_FROM_USD`) — display only, not for checkout.
+
+## GraphQL queries
+
+Defined in `src/lib/server/saleor/queries.ts` and `checkout-queries.ts`:
+
+- `PRODUCTS_QUERY` — paginated product list
+- `PRODUCT_BY_SLUG_QUERY` — single product with variants/media
+- `COLLECTIONS_QUERY` — collection list for homepage
+- `CATEGORIES_QUERY` — shop filter taxonomy (`shop-filters.ts`)
+- Checkout create / add line — in `checkout-queries.ts` (wired)
+
+Still needed:
+
+- `CHECKOUT_LINES_UPDATE` / `CHECKOUT_LINES_DELETE`
+- `CHECKOUT_COMPLETE`
+- ~~`checkoutAddPromoCode` / `checkoutRemovePromoCode`~~ — done in `checkout-queries.ts`
+
+## Type mapping
+
+Saleor uses `Money` with `gross`/`net` wrappers. Internal types flatten to:
+
+```typescript
+pricing: {
+	priceRange: {
+		start: {
+			amount: number;
+			currency: string;
+		}
+	}
+}
+```
+
+Mappers live in `src/lib/server/saleor/mappers.ts` (`mapProduct`, `mapProductListNode`, `mapCollection`).
+
+## Testing against Saleor
+
+1. Spin up Saleor (Docker or Saleor Cloud)
+2. Set `PUBLIC_SALEOR_API_URL` in `.env`
+3. Create products matching mock slugs for parity testing
+4. Enable env and test loaders — catalog swap points already call Saleor when `isSaleorEnabled()`
+
+## Security
+
+- GraphQL endpoint is public for catalog reads
+- Checkout mutations may require app tokens — use server-side loaders/actions only
+- Never expose Saleor app secret to the browser
+- Payment provider secrets live in Saleor Payment App config, not storefront env — see [saleor-payments.md](./saleor-payments.md) and [SECURITY-PUBLIC.md](../SECURITY-PUBLIC.md)
+
+## Quick migration
+
+Set `PUBLIC_SALEOR_API_URL` (and optionally `SALEOR_CHANNEL`) — primary catalog loaders already swap at env gates. Remaining work is mostly **uncommenting scaffolded checkout/collection blocks** marked `@saleor-migration` in code.
+
+| Step | Action              | Swap point                                                                                            |
+| ---- | ------------------- | ----------------------------------------------------------------------------------------------------- |
+| 1    | Set env vars        | `.env` — `PUBLIC_SALEOR_API_URL`, `SALEOR_CHANNEL`                                                    |
+| 2    | Verify gate         | `src/lib/server/saleor/client.ts` — `isSaleorEnabled()`                                               |
+| 3    | Catalog loads       | `src/lib/server/catalog/products.ts`, `parts.ts`, `collections.ts`, `shop-filters.ts`, `search.ts`    |
+| 4    | Channel per locale  | `src/lib/server/saleor/channels.ts` — `getChannelForLocale()`                                         |
+| 5    | Map responses       | `src/lib/server/saleor/mappers.ts`, `metadata.ts`                                                     |
+| 6    | GraphQL strings     | `src/lib/server/saleor/queries.ts`, `checkout-queries.ts`                                             |
+| 7    | Cart add / read     | `src/lib/server/saleor/checkout.ts`, `routes/cart/checkout/+server.ts`, `routes/cart/+page.server.ts` |
+| 8    | Cart remove/qty     | Uncomment blocks in `checkout-queries.ts`, `checkout.ts`, `src/lib/stores/cart.svelte.ts`             |
+| 9    | Checkout complete   | Uncomment `CHECKOUT_COMPLETE` + shipping blocks in `checkout-queries.ts`, `checkout.ts`               |
+| 10   | Collection products | Uncomment `COLLECTION_PRODUCTS_QUERY` in `queries.ts`, wire in `collections.ts`                       |
+
+**Mock fallback:** When env is unset, loaders call mock data via `guardMockCatalogFallback()` (`src/lib/server/catalog/fallback.ts`). Production requires Saleor — mock is dev-only.
+
+**Filter wiring:** Shop category pills use `getShopFilterOptions()` (`shop-filters.ts`); product lists filter via `filterProductsByShopSlug()` (legacy heuristics or Saleor `category.slug` / `tags`).
+
+### Agent flag — `@saleor-migration` comments
+
+Source files contain `// @saleor-migration:` (or block-comment equivalents) marking **intentional migration scaffolding** — env-gated live paths, mock fallbacks, and **commented GraphQL / handlers** ready to uncomment for checkout completion, line mutations, and collection product edges.
+
+**These are not dead code.** Agents running polish, lint, or simplify sweeps **must not remove** `@saleor-migration` markers or their associated commented blocks unless explicitly implementing and wiring that migration step. The saleor-readiness agent treats missing markers as a regression.
