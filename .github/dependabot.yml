@@ -1,0 +1,31 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
+      # Kit still peers typescript ^6; hold until Kit supports TS 7.
+      - dependency-name: typescript
+        update-types: ['version-update:semver-major']
+    groups:
+      svelte:
+        patterns:
+          - '@sveltejs/*'
+          - 'svelte*'
+      aws-sdk:
+        patterns:
+          - '@aws-sdk/*'
+      lint:
+        patterns:
+          - 'eslint*'
+          - 'prettier*'
+          - 'typescript-eslint'
+      tailwind:
+        patterns:
+          - 'tailwindcss'
+          - '@tailwindcss/*'
